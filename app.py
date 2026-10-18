@@ -1,5 +1,6 @@
 
 import base64
+import gzip
 from pathlib import Path
 
 import joblib
@@ -14,7 +15,7 @@ st.set_page_config(
     page_title="CardioPredict | ML Project",
     page_icon="❤️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,13 +26,31 @@ BASE_DIR = Path(__file__).resolve().parent
 # =====================================================
 @st.cache_resource
 def load_model():
-    model_path = BASE_DIR / "heart_model.pkl"
-    saved = joblib.load(model_path)
+    model_path = BASE_DIR / "heart_model_compressed.pkl.gz"
+
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Model file not found: {model_path.name}. "
+            "Upload heart_model_compressed.pkl.gz "
+            "to the same folder as app.py."
+        )
+
+    with gzip.open(model_path, "rb") as file:
+        saved = joblib.load(file)
 
     return saved["model"], saved["features"]
 
 
-model, features = load_model()
+try:
+    model, features = load_model()
+except Exception as error:
+    st.error(
+        "Could not load the trained model. "
+        "Check that heart_model_compressed.pkl.gz "
+        "is uploaded beside app.py."
+    )
+    st.exception(error)
+    st.stop()
 
 
 # =====================================================
@@ -82,10 +101,9 @@ def set_background(image_file):
             border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.15);
         }}
-
         </style>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -104,8 +122,8 @@ page = st.sidebar.radio(
     [
         "Prediction",
         "Model Dashboard",
-        "About the Project"
-    ]
+        "About the Project",
+    ],
 )
 
 st.sidebar.divider()
@@ -145,20 +163,20 @@ if page == "Prediction":
                 "Age (years)",
                 min_value=1,
                 max_value=100,
-                value=45
+                value=45,
             )
 
             gender = st.selectbox(
                 "Gender (dataset code)",
                 options=[1, 2],
-                help="Uses the numeric codes in the original dataset."
+                help="Uses the numeric codes in the original dataset.",
             )
 
             height = st.number_input(
                 "Height (cm)",
                 min_value=100,
                 max_value=250,
-                value=165
+                value=165,
             )
 
             weight = st.number_input(
@@ -166,7 +184,7 @@ if page == "Prediction":
                 min_value=25.0,
                 max_value=300.0,
                 value=65.0,
-                step=0.5
+                step=0.5,
             )
 
         with right:
@@ -176,14 +194,14 @@ if page == "Prediction":
                 "Systolic blood pressure",
                 min_value=70,
                 max_value=250,
-                value=120
+                value=120,
             )
 
             ap_lo = st.number_input(
                 "Diastolic blood pressure",
                 min_value=40,
                 max_value=150,
-                value=80
+                value=80,
             )
 
             cholesterol = st.selectbox(
@@ -192,8 +210,8 @@ if page == "Prediction":
                 format_func=lambda x: {
                     1: "1 - Normal",
                     2: "2 - Above normal",
-                    3: "3 - Well above normal"
-                }[x]
+                    3: "3 - Well above normal",
+                }[x],
             )
 
             gluc = st.selectbox(
@@ -202,8 +220,8 @@ if page == "Prediction":
                 format_func=lambda x: {
                     1: "1 - Normal",
                     2: "2 - Above normal",
-                    3: "3 - Well above normal"
-                }[x]
+                    3: "3 - Well above normal",
+                }[x],
             )
 
         st.markdown("#### Lifestyle inputs")
@@ -215,18 +233,20 @@ if page == "Prediction":
 
         with col2:
             alco = st.selectbox(
-                "Alcohol consumption", ["No", "Yes"]
+                "Alcohol consumption",
+                ["No", "Yes"],
             )
 
         with col3:
             active = st.selectbox(
-                "Physically active", ["Yes", "No"]
+                "Physically active",
+                ["Yes", "No"],
             )
 
         submitted = st.form_submit_button(
             "Generate Prediction",
             type="primary",
-            use_container_width=True
+            use_container_width=True,
         )
 
     if submitted:
@@ -250,35 +270,39 @@ if page == "Prediction":
                 "smoke": 1 if smoke == "Yes" else 0,
                 "alco": 1 if alco == "Yes" else 0,
                 "active": 1 if active == "Yes" else 0,
-                "age_years": age
+                "age_years": age,
             }
 
             input_df = pd.DataFrame([input_values])
 
-            # Match the exact training feature order
-            input_df = input_df[features]
+            try:
+                # Match the exact feature order used during training.
+                input_df = input_df[features]
+                prediction = model.predict(input_df)[0]
 
-            prediction = model.predict(input_df)[0]
+                st.divider()
+                st.subheader("Prediction Result")
 
-            st.divider()
-            st.subheader("Prediction Result")
+                if prediction == 1:
+                    st.error(
+                        "Model output: Class 1",
+                        icon="⚠️",
+                    )
+                else:
+                    st.success(
+                        "Model output: Class 0",
+                        icon="✅",
+                    )
 
-            if prediction == 1:
-                st.error(
-                    "Model output: Class 1",
-                    icon="⚠️"
+                st.caption(
+                    "Class 0 and Class 1 are labels from the dataset. "
+                    "This result is not a diagnosis or a reliable "
+                    "assessment of an individual's actual medical risk."
                 )
-            else:
-                st.success(
-                    "Model output: Class 0",
-                    icon="✅"
-                )
 
-            st.caption(
-                "Class 0 and Class 1 are labels from the dataset. "
-                "This result is not a diagnosis or a reliable "
-                "assessment of an individual's actual medical risk."
-            )
+            except Exception as error:
+                st.error("Could not generate a prediction.")
+                st.exception(error)
 
 
 # =====================================================
@@ -298,119 +322,139 @@ elif page == "Model Dashboard":
         "and do not establish clinical usefulness."
     )
 
-    # -----------------------------------------------
+    # -------------------------------------------------
     # Model comparison
-    # -----------------------------------------------
+    # -------------------------------------------------
     st.header("1. Model Comparison")
 
     results_path = BASE_DIR / "model_comparison_results.csv"
 
     if results_path.exists():
 
-        results = pd.read_csv(results_path)
+        try:
+            results = pd.read_csv(results_path)
 
-        st.dataframe(
-            results,
-            use_container_width=True,
-            hide_index=True
-        )
+            if results.empty:
+                st.warning("The model comparison file is empty.")
 
-        if (
-            "Model" in results.columns
-            and "Accuracy (%)" in results.columns
-            and not results.empty
-        ):
-            st.subheader("Accuracy Comparison")
+            else:
+                st.dataframe(
+                    results,
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
-            accuracy_chart = results.set_index("Model")[
-                ["Accuracy (%)"]
-            ]
+                if (
+                    "Model" in results.columns
+                    and "Accuracy (%)" in results.columns
+                ):
+                    st.subheader("Accuracy Comparison")
 
-            st.bar_chart(accuracy_chart)
+                    accuracy_chart = results.set_index("Model")[
+                        ["Accuracy (%)"]
+                    ]
 
-            best_model = results.loc[
-                results["Accuracy (%)"].idxmax()
-            ]
+                    st.bar_chart(accuracy_chart)
 
-            st.success(
-                f"Highest accuracy in this comparison: "
-                f"{best_model['Model']} "
-                f"({best_model['Accuracy (%)']:.2f}%)"
-            )
+                    best_model = results.loc[
+                        results["Accuracy (%)"].idxmax()
+                    ]
 
-        metric_columns = [
-            column for column in [
-                "Precision (%)",
-                "Recall (%)",
-                "F1 Score (%)"
-            ]
-            if column in results.columns
-        ]
+                    st.success(
+                        f"Highest accuracy in this comparison: "
+                        f"{best_model['Model']} "
+                        f"({best_model['Accuracy (%)']:.2f}%)"
+                    )
 
-        if "Model" in results.columns and metric_columns:
-            st.subheader("Precision, Recall and F1-Score")
+                metric_columns = [
+                    column
+                    for column in [
+                        "Precision (%)",
+                        "Recall (%)",
+                        "F1 Score (%)",
+                    ]
+                    if column in results.columns
+                ]
 
-            metric_chart = results.set_index("Model")[
-                metric_columns
-            ]
+                if (
+                    "Model" in results.columns
+                    and metric_columns
+                ):
+                    st.subheader(
+                        "Precision, Recall and F1-Score"
+                    )
 
-            st.bar_chart(metric_chart)
+                    metric_chart = results.set_index("Model")[
+                        metric_columns
+                    ]
+
+                    st.bar_chart(metric_chart)
+
+        except Exception as error:
+            st.warning("Could not read the model comparison file.")
+            st.exception(error)
 
     else:
         st.warning(
-            "Model comparison file not found. Run "
-            "model_comparison.py to generate the results."
+            "Model comparison file not found. "
+            "Include model_comparison_results.csv in your project."
         )
 
-    # -----------------------------------------------
+    # -------------------------------------------------
     # Dataset overview
-    # -----------------------------------------------
+    # -------------------------------------------------
     st.header("2. Dataset Overview")
 
     data_path = BASE_DIR / "heart_cleaned.csv"
+    data = None
 
     if data_path.exists():
 
-        data = pd.read_csv(data_path)
+        try:
+            data = pd.read_csv(data_path)
 
-        col1, col2, col3 = st.columns(3)
+            col1, col2, col3 = st.columns(3)
 
-        col1.metric(
-            "Total Records",
-            f"{len(data):,}"
-        )
+            col1.metric("Total Records", f"{len(data):,}")
 
-        if "cardio" in data.columns:
-            col2.metric(
-                "Class 0 Records",
-                f"{int((data['cardio'] == 0).sum()):,}"
+            if "cardio" in data.columns:
+                col2.metric(
+                    "Class 0 Records",
+                    f"{int((data['cardio'] == 0).sum()):,}",
+                )
+
+                col3.metric(
+                    "Class 1 Records",
+                    f"{int((data['cardio'] == 1).sum()):,}",
+                )
+
+                st.subheader("Target Class Distribution")
+
+                distribution = data["cardio"].value_counts().sort_index()
+                distribution.index = [
+                    f"Class {value}" for value in distribution.index
+                ]
+
+                st.bar_chart(distribution)
+
+            st.write(
+                "Missing values:",
+                int(data.isnull().sum().sum()),
             )
 
-            col3.metric(
-                "Class 1 Records",
-                f"{int((data['cardio'] == 1).sum()):,}"
-            )
-
-            st.subheader("Target Class Distribution")
-
-            distribution = data["cardio"].value_counts().sort_index()
-            distribution.index = [
-                f"Class {value}" for value in distribution.index
-            ]
-
-            st.bar_chart(distribution)
-
-        st.write(
-            "Missing values:",
-            int(data.isnull().sum().sum())
-        )
+        except Exception as error:
+            st.warning("Could not read the cleaned dataset.")
+            st.exception(error)
 
     else:
-        st.warning("heart_cleaned.csv was not found.")
+        st.warning(
+            "heart_cleaned.csv was not found. "
+            "Upload it beside app.py to display the dataset overview."
+        )
 
-    # -----------------------------------------------
+    # -------------------------------------------------
     # Confusion matrix
-    # -----------------------------------------------
+    # -------------------------------------------------
     st.header("3. Confusion Matrix")
 
     st.write(
@@ -419,83 +463,100 @@ elif page == "Model Dashboard":
     )
 
     try:
-        from sklearn.model_selection import train_test_split
-        from sklearn.metrics import confusion_matrix
         import matplotlib.pyplot as plt
+        from sklearn.metrics import confusion_matrix
+        from sklearn.model_selection import train_test_split
 
-        if data_path.exists():
-            data = pd.read_csv(data_path)
+        if data is not None:
 
-            X = data[features]
-            y = data["cardio"]
+            required_columns = features + ["cardio"]
+            missing_columns = [
+                column
+                for column in required_columns
+                if column not in data.columns
+            ]
 
-            X_train, X_test, y_train, y_test = train_test_split(
-                X,
-                y,
-                test_size=0.2,
-                random_state=42,
-                stratify=y
-            )
+            if missing_columns:
+                st.warning(
+                    "Dataset is missing required columns: "
+                    + ", ".join(missing_columns)
+                )
 
-            predictions = model.predict(X_test)
+            else:
+                X = data[features]
+                y = data["cardio"]
 
-            cm = confusion_matrix(
-                y_test,
-                predictions,
-                labels=[0, 1]
-            )
+                _, X_test, _, y_test = train_test_split(
+                    X,
+                    y,
+                    test_size=0.2,
+                    random_state=42,
+                    stratify=y,
+                )
 
-            fig, ax = plt.subplots(figsize=(5, 4))
+                predictions = model.predict(X_test)
 
-            image = ax.imshow(cm, interpolation="nearest")
-            ax.set_title("Random Forest Confusion Matrix")
-            fig.colorbar(image, ax=ax)
+                cm = confusion_matrix(
+                    y_test,
+                    predictions,
+                    labels=[0, 1],
+                )
 
-            ax.set_xticks([0, 1])
-            ax.set_yticks([0, 1])
-            ax.set_xticklabels(["Class 0", "Class 1"])
-            ax.set_yticklabels(["Class 0", "Class 1"])
-            ax.set_xlabel("Predicted Label")
-            ax.set_ylabel("Actual Label")
+                fig, ax = plt.subplots(figsize=(5, 4))
 
-            for i in range(2):
-                for j in range(2):
-                    ax.text(
-                        j,
-                        i,
-                        f"{cm[i, j]:,}",
-                        ha="center",
-                        va="center"
-                    )
+                image = ax.imshow(
+                    cm,
+                    interpolation="nearest",
+                )
 
-            fig.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
+                ax.set_title("Random Forest Confusion Matrix")
+                fig.colorbar(image, ax=ax)
 
-            st.caption(
-                "Rows represent actual labels; columns represent "
-                "predicted labels. Diagonal cells are correct "
-                "classifications."
-            )
+                ax.set_xticks([0, 1])
+                ax.set_yticks([0, 1])
+                ax.set_xticklabels(["Class 0", "Class 1"])
+                ax.set_yticklabels(["Class 0", "Class 1"])
+                ax.set_xlabel("Predicted Label")
+                ax.set_ylabel("Actual Label")
+
+                for i in range(2):
+                    for j in range(2):
+                        ax.text(
+                            j,
+                            i,
+                            f"{cm[i, j]:,}",
+                            ha="center",
+                            va="center",
+                        )
+
+                fig.tight_layout()
+                st.pyplot(fig)
+                plt.close(fig)
+
+                st.caption(
+                    "Rows represent actual labels; columns represent "
+                    "predicted labels. Diagonal cells are correct "
+                    "classifications."
+                )
 
     except Exception as error:
-        st.warning(
-            "Could not generate the confusion matrix. "
-            f"Details: {error}"
-        )
+        st.warning("Could not generate the confusion matrix.")
+        st.caption(str(error))
 
-    # -----------------------------------------------
+    # -------------------------------------------------
     # Feature importance
-    # -----------------------------------------------
+    # -------------------------------------------------
     st.header("4. Feature Importance")
 
     try:
-        importance = pd.DataFrame({
-            "Feature": features,
-            "Importance": model.feature_importances_
-        }).sort_values(
+        importance = pd.DataFrame(
+            {
+                "Feature": features,
+                "Importance": model.feature_importances_,
+            }
+        ).sort_values(
             "Importance",
-            ascending=False
+            ascending=False,
         )
 
         st.bar_chart(
@@ -508,10 +569,11 @@ elif page == "Model Dashboard":
             "causes cardiovascular disease."
         )
 
-    except (AttributeError, ValueError):
+    except (AttributeError, ValueError) as error:
         st.warning(
             "Feature importance is unavailable for this model."
         )
+        st.caption(str(error))
 
 
 # =====================================================
@@ -543,16 +605,18 @@ elif page == "About the Project":
     st.markdown("""
     - Python
     - Pandas
+    - NumPy
     - Scikit-learn
     - Streamlit
     - Matplotlib
+    - Joblib
     """)
 
     st.header("Current Model Result")
 
     st.metric(
         "Random Forest test accuracy",
-        "73.26%"
+        "73.26%",
     )
 
     st.caption(
@@ -565,7 +629,7 @@ elif page == "About the Project":
 
     st.markdown("""
     - The model is an educational prototype.
-    - Data cleaning choices may affect performance and generalizability.
+    - Data-cleaning choices may affect performance and generalizability.
     - Accuracy alone does not establish model reliability.
     - The model must not be used to diagnose, rule out, or treat disease.
     """)
